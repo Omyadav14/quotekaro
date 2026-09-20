@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import jsPDF from "jspdf";
+import { supabase } from "@/lib/supabase";
 
 type Item = {
   name: string;
@@ -44,7 +45,85 @@ type SavedQuotation = {
 const formatCurrency = (value: number) =>
   `₹${value.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 
+
+const isUuid = (value: string) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+
+const normalizePayments = (value: unknown): PaymentRecord[] =>
+  Array.isArray(value)
+    ? value.map((payment) => ({
+        id: String(payment?.id ?? `${Date.now()}-${Math.random()}`),
+        amount: Number(payment?.amount) || 0,
+        date: String(payment?.date ?? ""),
+        method: String(payment?.method ?? "Other"),
+      }))
+    : [];
+
+const dbRowToQuotation = (row: any): SavedQuotation => ({
+  id: String(row.id),
+  businessName: row.business_name || "Your Business Name",
+  businessPhone: row.business_phone || "",
+  businessEmail: row.business_email || "",
+  businessAddress: row.business_address || "",
+  gstNumber: row.gst_number || "",
+  customer: row.customer || "",
+  phone: row.phone || "",
+  location: row.location || "",
+  job: row.job || "",
+  quotationNumber: row.quotation_number || "",
+  quotationDate: row.quotation_date || "",
+  items: Array.isArray(row.items) ? row.items : [],
+  discount: Number(row.discount) || 0,
+  gstRate: Number(row.gst_rate) || 0,
+  total: Number(row.total) || 0,
+  amountPaid: Number(row.amount_paid) || 0,
+  payments: normalizePayments(row.payments),
+  paymentTerms: row.payment_terms || "50% advance, balance on completion",
+  savedAt: row.created_at || new Date().toISOString(),
+});
+
+const quotationToDbRow = (quote: SavedQuotation, userId: string) => ({
+  id: isUuid(quote.id) ? quote.id : crypto.randomUUID(),
+  user_id: userId,
+  business_name: quote.businessName || "Your Business Name",
+  business_phone: quote.businessPhone || "",
+  business_email: quote.businessEmail || "",
+  business_address: quote.businessAddress || "",
+  gst_number: quote.gstNumber || "",
+  customer: quote.customer || "",
+  phone: quote.phone || "",
+  location: quote.location || "",
+  job: quote.job || "",
+  quotation_number: quote.quotationNumber || "",
+  quotation_date: quote.quotationDate || "",
+  items: quote.items || [],
+  discount: Number(quote.discount) || 0,
+  gst_rate: Number(quote.gstRate) || 0,
+  total: Number(quote.total) || 0,
+  amount_paid: Number(quote.amountPaid) || 0,
+  payments: quote.payments || [],
+  payment_terms: quote.paymentTerms || "50% advance, balance on completion",
+  created_at: quote.savedAt || new Date().toISOString(),
+});
+
 export default function Home() {
+    const handleLogout = async () => {
+    await supabase.auth.signOut();
+    window.location.href = "/login";
+  };
+    useEffect(() => {
+    const checkSession = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        window.location.href = "/login";
+      }
+    };
+
+    checkSession();
+  }, []);
   const [showForm, setShowForm] = useState(false);
   const [generated, setGenerated] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -82,26 +161,75 @@ export default function Home() {
   );
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem("quotekaro_quotations");
-      if (saved) {
-        setSavedQuotations(JSON.parse(saved));
-      }
+    const loadData = async () => {
+      try {
+        const localSettings = localStorage.getItem("quotekaro_settings");
+        if (localSettings) {
+          const parsed = JSON.parse(localSettings);
+          setBusinessName(parsed.businessName || "Your Business Name");
+          setBusinessPhone(parsed.businessPhone || "");
+          setBusinessEmail(parsed.businessEmail || "");
+          setBusinessAddress(parsed.businessAddress || "");
+          setGstNumber(parsed.gstNumber || "");
+          setGstRate(Number(parsed.defaultGstRate ?? 18));
+          setPaymentTerms(parsed.defaultPaymentTerms || "50% advance, balance on completion");
+        }
 
-      const settings = localStorage.getItem("quotekaro_settings");
-      if (settings) {
-        const parsed = JSON.parse(settings);
-        setBusinessName(parsed.businessName || "Your Business Name");
-        setBusinessPhone(parsed.businessPhone || "");
-        setBusinessEmail(parsed.businessEmail || "");
-        setBusinessAddress(parsed.businessAddress || "");
-        setGstNumber(parsed.gstNumber || "");
-        setGstRate(Number(parsed.defaultGstRate ?? 18));
-        setPaymentTerms(parsed.defaultPaymentTerms || "50% advance, balance on completion");
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+
+        if (sessionError) throw sessionError;
+
+        const userId = sessionData.session?.user?.id;
+
+        if (!userId) {
+          throw new Error("Please log in to load your QuoteKaro data.");
+        }
+
+        const { data, error } = await supabase
+          .from("quotations")
+          .select("*")
+          .order("created_at", { ascending: false });
+
+        if (error) throw error;
+
+        let quotations = (data || []).map(dbRowToQuotation);
+
+        // Migrate any quotations that were previously saved only in localStorage.
+        if (quotations.length === 0) {
+          const localSaved = localStorage.getItem("quotekaro_quotations");
+          if (localSaved) {
+            const localQuotations = JSON.parse(localSaved) as SavedQuotation[];
+            if (localQuotations.length > 0) {
+              quotations = localQuotations.map((quote) => ({
+                ...quote,
+                id: isUuid(quote.id) ? quote.id : crypto.randomUUID(),
+                gstNumber: quote.gstNumber || "",
+                payments: Array.isArray(quote.payments) ? quote.payments : [],
+              }));
+
+              const { error: migrationError } = await supabase
+                .from("quotations")
+                .upsert(quotations.map((quote) => quotationToDbRow(quote, userId)), { onConflict: "id" });
+
+              if (migrationError) throw migrationError;
+            }
+          }
+        }
+
+        setSavedQuotations(quotations);
+        localStorage.setItem("quotekaro_quotations", JSON.stringify(quotations));
+      } catch (error) {
+        console.error("QuoteKaro data loading error:", error);
+        try {
+          const saved = localStorage.getItem("quotekaro_quotations");
+          setSavedQuotations(saved ? JSON.parse(saved) : []);
+        } catch {
+          setSavedQuotations([]);
+        }
       }
-    } catch {
-      setSavedQuotations([]);
-    }
+    };
+
+    loadData();
   }, []);
 
   const saveBusinessSettings = (next: {
@@ -124,9 +252,36 @@ export default function Home() {
     alert("Business settings saved successfully.");
   };
 
-  const persistQuotations = (quotes: SavedQuotation[]) => {
+  const persistQuotations = async (quotes: SavedQuotation[]) => {
     setSavedQuotations(quotes);
     localStorage.setItem("quotekaro_quotations", JSON.stringify(quotes));
+
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+
+    if (sessionError) {
+      console.error("QuoteKaro Supabase session error:", sessionError);
+      alert(`Could not verify your login: ${sessionError.message}`);
+      return false;
+    }
+
+    const userId = sessionData.session?.user?.id;
+
+    if (!userId) {
+      alert("Please log in before saving quotations.");
+      return false;
+    }
+
+    const { error } = await supabase
+      .from("quotations")
+      .upsert(quotes.map((quote) => quotationToDbRow(quote, userId)), { onConflict: "id" });
+
+    if (error) {
+      console.error("QuoteKaro Supabase save error:", error);
+      alert(`Could not sync with Supabase: ${error.message}`);
+      return false;
+    }
+
+    return true;
   };
 
 
@@ -184,14 +339,19 @@ export default function Home() {
     setItems(items.filter((_, i) => i !== index));
   };
 
-  const saveQuotation = () => {
+  const saveQuotation = async () => {
     if (!customer || !job) {
       alert("Please enter customer name and job description first.");
       return;
     }
 
+    const existingQuote = editingId
+      ? savedQuotations.find((q) => q.id === editingId)
+      : undefined;
+    const quoteId = editingId && isUuid(editingId) ? editingId : crypto.randomUUID();
+
     const quote: SavedQuotation = {
-      id: editingId || `${Date.now()}`,
+      id: quoteId,
       businessName,
       businessPhone,
       businessEmail,
@@ -207,22 +367,18 @@ export default function Home() {
       gstRate,
       total,
       amountPaid: (() => {
-        const existing = editingId
-          ? (savedQuotations.find((q) => q.id === editingId)?.payments || [])
-          : [];
+        const existing = existingQuote?.payments || [];
         if (existing.length > 0) {
           return Math.min(
             total,
             existing.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0)
           );
         }
-        return editingId
-          ? Math.min(Math.max(Number(savedQuotations.find((q) => q.id === editingId)?.amountPaid) || 0, 0), total)
+        return existingQuote
+          ? Math.min(Math.max(Number(existingQuote.amountPaid) || 0, 0), total)
           : 0;
       })(),
-      payments: editingId
-        ? (savedQuotations.find((q) => q.id === editingId)?.payments || [])
-        : [],
+      payments: existingQuote?.payments || [],
       paymentTerms,
       gstNumber,
       savedAt: new Date().toISOString(),
@@ -232,7 +388,9 @@ export default function Home() {
       ? savedQuotations.map((q) => (q.id === editingId ? quote : q))
       : [quote, ...savedQuotations];
 
-    persistQuotations(updated);
+    const synced = await persistQuotations(updated);
+    if (!synced) return;
+
     setEditingId(quote.id);
     setGenerated(true);
     alert(editingId ? "Quotation updated successfully." : "Quotation saved successfully.");
@@ -261,9 +419,19 @@ export default function Home() {
     setShowForm(true);
   };
 
-  const deleteQuotation = (id: string) => {
+  const deleteQuotation = async (id: string) => {
     if (!confirm("Delete this quotation? This cannot be undone.")) return;
-    persistQuotations(savedQuotations.filter((q) => q.id !== id));
+
+    const { error } = await supabase.from("quotations").delete().eq("id", id);
+    if (error) {
+      console.error("QuoteKaro Supabase delete error:", error);
+      alert(`Could not delete from Supabase: ${error.message}`);
+      return;
+    }
+
+    const updated = savedQuotations.filter((q) => q.id !== id);
+    setSavedQuotations(updated);
+    localStorage.setItem("quotekaro_quotations", JSON.stringify(updated));
     if (editingId === id) setEditingId(null);
   };
 
@@ -707,6 +875,12 @@ export default function Home() {
               className="w-full rounded-xl px-4 py-3 text-left hover:bg-slate-50"
             >
               ⚙ Settings
+                          <button
+              onClick={handleLogout}
+              className="mt-2 w-full rounded-xl px-4 py-3 text-left text-red-600 hover:bg-red-50"
+            >
+              ↪ Logout
+            </button>
             </button>
           </nav>
 
@@ -1045,43 +1219,51 @@ export default function Home() {
                       {items.map((item, index) => (
                         <div
                           key={index}
-                          className="grid gap-4 rounded-xl border p-4 md:grid-cols-[minmax(0,2fr)_minmax(85px,0.9fr)_minmax(90px,1fr)_minmax(110px,1fr)_minmax(125px,1.2fr)_auto]"
+                          className="flex min-w-0 flex-wrap items-end gap-4 rounded-xl border p-4"
                         >
-                          <Input
-                            label="Item name"
-                            placeholder="Item"
-                            value={item.name}
-                            onChange={(value) =>
-                              updateItem(index, "name", value)
-                            }
-                          />
+                          <div className="min-w-[180px] flex-[1_1_180px]">
+                            <Input
+                              label="Item name"
+                              placeholder="Item"
+                              value={item.name}
+                              onChange={(value) =>
+                                updateItem(index, "name", value)
+                              }
+                            />
+                          </div>
 
-                          <NumberInput
-                            label="Qty"
-                            value={item.qty}
-                            onChange={(value) =>
-                              updateItem(index, "qty", value)
-                            }
-                          />
+                          <div className="w-full sm:w-auto sm:flex-[0_0_100px]">
+                            <NumberInput
+                              label="Qty"
+                              value={item.qty}
+                              onChange={(value) =>
+                                updateItem(index, "qty", value)
+                              }
+                            />
+                          </div>
 
-                          <Input
-                            label="Unit"
-                            placeholder="sq.ft"
-                            value={item.unit}
-                            onChange={(value) =>
-                              updateItem(index, "unit", value)
-                            }
-                          />
+                          <div className="w-full sm:w-auto sm:flex-[0_0_110px]">
+                            <Input
+                              label="Unit"
+                              placeholder="sq.ft"
+                              value={item.unit}
+                              onChange={(value) =>
+                                updateItem(index, "unit", value)
+                              }
+                            />
+                          </div>
 
-                          <NumberInput
-                            label="Rate"
-                            value={item.rate}
-                            onChange={(value) =>
-                              updateItem(index, "rate", value)
-                            }
-                          />
+                          <div className="w-full sm:w-auto sm:flex-[0_0_120px]">
+                            <NumberInput
+                              label="Rate"
+                              value={item.rate}
+                              onChange={(value) =>
+                                updateItem(index, "rate", value)
+                              }
+                            />
+                          </div>
 
-                          <div>
+                          <div className="w-full sm:w-auto sm:flex-[0_0_150px]">
                             <label className="mb-2 block text-sm font-semibold">
                               Amount
                             </label>
@@ -1090,12 +1272,14 @@ export default function Home() {
                             </div>
                           </div>
 
-                          <button
-                            onClick={() => removeItem(index)}
-                            className="rounded-xl border px-3 py-3 text-sm font-semibold text-red-600 hover:bg-red-50 md:mt-7"
-                          >
-                            Remove
-                          </button>
+                          <div className="w-full sm:w-auto sm:flex-[0_0_90px]">
+                            <button
+                              onClick={() => removeItem(index)}
+                              className="w-full rounded-xl border px-3 py-3 text-sm font-semibold text-red-600 hover:bg-red-50"
+                            >
+                              Remove
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1821,9 +2005,20 @@ function QuotationHistory({
   const [statusFilter, setStatusFilter] = useState("All");
 
   const getPaymentStatus = (quote: SavedQuotation) => {
-    const paid = Math.min(Math.max(quote.amountPaid || 0, 0), quote.total);
-    if (paid >= quote.total && quote.total > 0) return "Paid";
-    if (paid > 0) return "Partially Paid";
+    const payments = Array.isArray(quote.payments) ? quote.payments : [];
+
+    const paid =
+      payments.length > 0
+        ? payments.reduce(
+            (sum, payment) => sum + (Number(payment.amount) || 0),
+            0
+          )
+        : Number(quote.amountPaid) || 0;
+
+    const safePaid = Math.min(Math.max(paid, 0), quote.total);
+
+    if (safePaid >= quote.total && quote.total > 0) return "Paid";
+    if (safePaid > 0) return "Partially Paid";
     return "Pending";
   };
 
