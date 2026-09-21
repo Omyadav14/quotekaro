@@ -1093,7 +1093,131 @@ export default function Home() {
                   />
                 </div>
               </div>
+            <div className="mt-6 rounded-2xl border bg-white p-5 shadow-sm">
+  <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+    <div>
+      <p className="text-sm text-slate-500">Business performance</p>
+      <h3 className="mt-1 text-xl font-bold">Last 6 months</h3>
+      <p className="mt-1 text-sm text-slate-500">
+        Quotations created and payments received
+      </p>
+    </div>
+  </div>
 
+  <div className="mt-6 grid grid-cols-6 gap-2 sm:gap-4">
+    {Array.from({ length: 6 }).map((_, index) => {
+      const now = new Date();
+      const monthDate = new Date(
+        now.getFullYear(),
+        now.getMonth() - (5 - index),
+        1
+      );
+
+      const month = monthDate.toLocaleDateString("en-IN", {
+        month: "short",
+      });
+
+      const year = monthDate.getFullYear();
+      const monthIndex = monthDate.getMonth();
+
+      const monthQuotations = savedQuotations.filter((q) => {
+        const date = new Date(q.savedAt);
+        return (
+          date.getMonth() === monthIndex &&
+          date.getFullYear() === year
+        );
+      });
+
+      const quotationCount = monthQuotations.length;
+
+      const paymentReceived = monthQuotations.reduce((sum, q) => {
+        const payments = Array.isArray(q.payments) ? q.payments : [];
+
+        if (payments.length > 0) {
+          return (
+            sum +
+            payments.reduce(
+              (paymentSum, payment) =>
+                paymentSum + (Number(payment.amount) || 0),
+              0
+            )
+          );
+        }
+
+        return sum + Math.max(Number(q.amountPaid) || 0, 0);
+      }, 0);
+
+      const maxPayment = Math.max(
+        ...Array.from({ length: 6 }).map((_, i) => {
+          const d = new Date(
+            now.getFullYear(),
+            now.getMonth() - (5 - i),
+            1
+          );
+
+          return savedQuotations
+            .filter((q) => {
+              const date = new Date(q.savedAt);
+              return (
+                date.getMonth() === d.getMonth() &&
+                date.getFullYear() === d.getFullYear()
+              );
+            })
+            .reduce((sum, q) => {
+              const payments = Array.isArray(q.payments)
+                ? q.payments
+                : [];
+
+              if (payments.length > 0) {
+                return (
+                  sum +
+                  payments.reduce(
+                    (paymentSum, payment) =>
+                      paymentSum + (Number(payment.amount) || 0),
+                    0
+                  )
+                );
+              }
+
+              return sum + Math.max(Number(q.amountPaid) || 0, 0);
+            }, 0);
+        }),
+        1
+      );
+
+      const barHeight = Math.max(
+        paymentReceived > 0
+          ? (paymentReceived / maxPayment) * 100
+          : 4,
+        4
+      );
+
+      return (
+        <div key={`${year}-${monthIndex}`} className="flex flex-col items-center">
+          <div className="flex h-40 w-full items-end justify-center rounded-xl bg-slate-50 px-2">
+            <div
+              className="w-full max-w-10 rounded-t-lg bg-blue-600 transition-all"
+              style={{ height: `${barHeight}%` }}
+              title={`${formatCurrency(paymentReceived)} received`}
+            />
+          </div>
+
+          <p className="mt-2 text-xs font-semibold text-slate-700">
+            {month}
+          </p>
+
+          <p className="text-[11px] text-slate-500">
+            {quotationCount} quote{quotationCount !== 1 ? "s" : ""}
+          </p>
+
+          <p className="mt-1 text-[11px] font-semibold text-blue-600">
+            {formatCurrency(paymentReceived)}
+          </p>
+        </div>
+      );
+    })}
+  </div>
+</div>   
               <div className="mt-6 grid gap-4 md:grid-cols-3">
                 <Feature icon="✨" title="Smart Quotation" text="Turn a simple job description into an itemized quote." />
                 <Feature icon="₹" title="Smart Pricing" text="Suggest labour and material pricing for your jobs." />
