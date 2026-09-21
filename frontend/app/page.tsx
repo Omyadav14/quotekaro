@@ -863,25 +863,27 @@ export default function Home() {
 
             <div className="my-5 border-t" />
 
-            <button
-              onClick={() => {
-                setShowSettings(true);
-                setShowPayments(false);
-                setShowCustomers(false);
-                setShowHistory(false);
-                setShowForm(false);
-                setShowMobileMenu(false);
-              }}
-              className="w-full rounded-xl px-4 py-3 text-left hover:bg-slate-50"
-            >
-              ⚙ Settings
-                          <button
-              onClick={handleLogout}
-              className="mt-2 w-full rounded-xl px-4 py-3 text-left text-red-600 hover:bg-red-50"
-            >
-              ↪ Logout
-            </button>
-            </button>
+           <button
+  onClick={() => {
+    setShowSettings(true);
+    setShowPayments(false);
+    setShowCustomers(false);
+    setShowHistory(false);
+    setShowForm(false);
+    setShowMobileMenu(false);
+  }}
+  className="w-full rounded-xl px-4 py-3 text-left hover:bg-slate-50"
+>
+  ⚙ Settings
+</button>
+
+<button
+  onClick={handleLogout}
+  className="mt-2 w-full rounded-xl px-4 py-3 text-left text-red-600 hover:bg-red-50"
+>
+  ↪ Logout
+</button>
+
           </nav>
 
           <div className="mt-6 rounded-xl bg-slate-50 p-4 sm:mt-8">
