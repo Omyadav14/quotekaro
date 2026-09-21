@@ -810,7 +810,40 @@ export default function Home() {
 
     doc.save(`QuoteKaro-${customer.replace(/[^a-z0-9]+/gi, "-") || "quotation"}.pdf`);
   };
+  const revenueAnalytics = savedQuotations.reduce(
+    (acc, quote) => {
+      const quoted = Number(quote.total) || 0;
 
+      const payments = Array.isArray(quote.payments) ? quote.payments : [];
+
+      const received =
+        payments.length > 0
+          ? payments.reduce(
+              (sum, payment) => sum + (Number(payment.amount) || 0),
+              0
+            )
+          : Number(quote.amountPaid) || 0;
+
+      acc.quoted += quoted;
+      acc.received += Math.max(received, 0);
+
+      return acc;
+    },
+    {
+      quoted: 0,
+      received: 0,
+    }
+  );
+
+  const analyticsPending = Math.max(
+    revenueAnalytics.quoted - revenueAnalytics.received,
+    0
+  );
+
+  const collectionRate =
+    revenueAnalytics.quoted > 0
+      ? (revenueAnalytics.received / revenueAnalytics.quoted) * 100
+      : 0;
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900">
       <header className="border-b bg-white">
@@ -1139,7 +1172,50 @@ export default function Home() {
                   />
                 </div>
               </div>
-            <div className="mt-6 rounded-2xl border bg-white p-5 shadow-sm">
+                          <div className="mt-6 rounded-2xl border bg-white p-5 shadow-sm">
+                <div>
+                  <p className="text-sm text-slate-500">
+                    Revenue & payment analytics
+                  </p>
+                  <h3 className="mt-1 text-xl font-bold">
+                    Financial overview
+                  </h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Track your quoted value, received payments, and pending
+                    payments.
+                  </p>
+                </div>
+
+                <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="rounded-xl bg-slate-50 p-4">
+                    <p className="text-sm text-slate-500">Total quoted</p>
+                    <p className="mt-1 text-xl font-bold text-slate-900">
+                      {formatCurrency(revenueAnalytics.quoted)}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-emerald-50 p-4">
+                    <p className="text-sm text-emerald-700">Received</p>
+                    <p className="mt-1 text-xl font-bold text-emerald-700">
+                      {formatCurrency(revenueAnalytics.received)}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-amber-50 p-4">
+                    <p className="text-sm text-amber-700">Pending</p>
+                    <p className="mt-1 text-xl font-bold text-amber-700">
+                      {formatCurrency(analyticsPending)}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-blue-50 p-4">
+                    <p className="text-sm text-blue-700">Collection rate</p>
+                    <p className="mt-1 text-xl font-bold text-blue-700">
+                      {collectionRate.toFixed(1)}%
+                    </p>
+                  </div>
+                </div>
+              </div><div className="mt-6 rounded-2xl border bg-white p-5 shadow-sm">
   <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
     <div>
       <p className="text-sm text-slate-500">Business performance</p>
