@@ -293,6 +293,52 @@ export default function Home() {
   const taxableAmount = Math.max(subtotal - discountAmount, 0);
   const gst = taxableAmount * (gstRate / 100);
   const total = taxableAmount + gst;
+    const customerSummary = savedQuotations.reduce<
+    Record<
+      string,
+      {
+        name: string;
+        quotations: number;
+        quoted: number;
+        received: number;
+      }
+    >
+  >((acc, quote) => {
+    const name = quote.customer?.trim() || "Unnamed customer";
+
+    if (!acc[name]) {
+      acc[name] = {
+        name,
+        quotations: 0,
+        quoted: 0,
+        received: 0,
+      };
+    }
+
+    const payments = Array.isArray(quote.payments) ? quote.payments : [];
+
+    const received =
+      payments.length > 0
+        ? payments.reduce(
+            (sum, payment) => sum + (Number(payment.amount) || 0),
+            0
+          )
+        : Number(quote.amountPaid) || 0;
+
+    acc[name].quotations += 1;
+    acc[name].quoted += Number(quote.total) || 0;
+    acc[name].received += Math.max(received, 0);
+
+    return acc;
+  }, {});
+
+  const topCustomers = Object.values(customerSummary)
+    .map((customer) => ({
+      ...customer,
+      pending: Math.max(customer.quoted - customer.received, 0),
+    }))
+    .sort((a, b) => b.quoted - a.quoted)
+    .slice(0, 5);
 
   const generateQuotation = () => {
     if (!customer || !job) {
@@ -1217,7 +1263,72 @@ export default function Home() {
       );
     })}
   </div>
-</div>   
+</div> 
+                <div className="mt-6 rounded-2xl border bg-white p-5 shadow-sm">
+                <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+                  <div>
+                    <p className="text-sm text-slate-500">Customer insights</p>
+                    <h3 className="mt-1 text-xl font-bold">Top Customers</h3>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Your customers ranked by total quoted value
+                    </p>
+                  </div>
+                </div>
+
+                {topCustomers.length === 0 ? (
+                  <div className="mt-5 rounded-xl bg-slate-50 p-6 text-center">
+                    <p className="font-semibold text-slate-700">
+                      No customer data yet
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Create and save a quotation to see customer insights.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="mt-5 overflow-x-auto">
+                    <table className="w-full min-w-[650px] text-sm">
+                      <thead>
+                        <tr className="border-b text-left text-xs uppercase tracking-wide text-slate-400">
+                          <th className="pb-3 pr-4">Customer</th>
+                          <th className="pb-3 pr-4">Quotes</th>
+                          <th className="pb-3 pr-4">Quoted</th>
+                          <th className="pb-3 pr-4">Received</th>
+                          <th className="pb-3">Pending</th>
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        {topCustomers.map((customer) => (
+                          <tr
+                            key={customer.name}
+                            className="border-b last:border-0"
+                          >
+                            <td className="py-4 pr-4 font-semibold text-slate-800">
+                              {customer.name}
+                            </td>
+
+                            <td className="py-4 pr-4 text-slate-600">
+                              {customer.quotations}
+                            </td>
+
+                            <td className="py-4 pr-4 font-medium">
+                              {formatCurrency(customer.quoted)}
+                            </td>
+
+                            <td className="py-4 pr-4 font-medium text-emerald-600">
+                              {formatCurrency(customer.received)}
+                            </td>
+
+                            <td className="py-4 font-medium text-amber-600">
+                              {formatCurrency(customer.pending)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
               <div className="mt-6 grid gap-4 md:grid-cols-3">
                 <Feature icon="✨" title="Smart Quotation" text="Turn a simple job description into an itemized quote." />
                 <Feature icon="₹" title="Smart Pricing" text="Suggest labour and material pricing for your jobs." />
