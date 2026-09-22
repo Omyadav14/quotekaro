@@ -508,47 +508,79 @@ export default function Home() {
   };
 
   const shareOnWhatsApp = () => {
-    if (!customer) {
-      alert("Please enter customer name first.");
-      return;
-    }
+   
+  if (!customer) {
+    alert("Please enter customer name first.");
+    return;
+  }
 
-    const cleanPhone = phone.replace(/\D/g, "");
-    let whatsappPhone = cleanPhone;
+  const cleanPhone = phone.replace(/\D/g, "");
+  let whatsappPhone = cleanPhone;
 
-    // If a 10-digit Indian number is entered, add India's country code.
-    if (whatsappPhone.length === 10) {
-      whatsappPhone = `91${whatsappPhone}`;
-    }
+  // If a 10-digit Indian number is entered, add India's country code.
+  if (whatsappPhone.length === 10) {
+    whatsappPhone = `91${whatsappPhone}`;
+  }
 
-    const message = [
-      `Hello ${customer},`,
-      "",
-      `Thank you for choosing ${businessName || "our business"}.`,
-      `Please find your quotation details below:`,
-      "",
-      `📋 Quotation No: ${quotationNumber}`,
-      `📅 Date: ${quotationDate}`,
-      `🏠 Project: ${job || "-"}`,
-      `💰 Total Amount: ${formatCurrency(total)}`,
-      `💳 Payment Terms: ${paymentTerms || "As mutually agreed"}`,
-      "",
-      "📎 The quotation PDF is ready to download and share.",
-      "",
-      "Please review the quotation and let us know if you have any questions or would like to discuss any changes.",
-      "",
-      "Thank you for your business!",
-      businessName || "Our Team"
-    ].join("\n");
+  // Create item-by-item quotation details
+  const itemDetails = items
+    .filter((item) => item.name.trim())
+    .map((item, index) => {
+      const itemAmount = Number(item.qty) * Number(item.rate);
 
-    const encodedMessage = encodeURIComponent(message);
-    const whatsappUrl = whatsappPhone.length >= 10
+      return `${index + 1}. ${item.name}
+   Qty: ${item.qty} ${item.unit || ""}
+   Rate: ${formatCurrency(item.rate)}
+   Amount: ${formatCurrency(itemAmount)}`;
+    })
+    .join("\n\n");
+
+  // Calculate pending amount
+  const pendingAmount = Math.max(
+    Number(total) - Number(amountPaid),
+    0
+  );
+
+  const message = [
+    `Hello ${customer},`,
+    "",
+    `Thank you for choosing ${businessName || "our business"}.`,
+    "",
+    `📋 QUOTATION DETAILS`,
+    `Quotation No: ${quotationNumber}`,
+    `Date: ${quotationDate}`,
+    `Project: ${job || "-"}`,
+    `Location: ${location || "-"}`,
+    "",
+    `🧾 ITEMS`,
+    itemDetails || "No items added",
+    "",
+    `Subtotal: ${formatCurrency(subtotal)}`,
+    `Discount: ${formatCurrency(discountAmount)}`,
+    `Taxable Amount: ${formatCurrency(taxableAmount)}`,
+    `GST (${gstRate}%): ${formatCurrency(gst)}`,
+    "",
+    `💰 TOTAL: ${formatCurrency(total)}`,
+    `💳 Amount Paid: ${formatCurrency(amountPaid)}`,
+    `⏳ Pending Amount: ${formatCurrency(pendingAmount)}`,
+    "",
+    `📝 Payment Terms: ${paymentTerms || "As mutually agreed"}`,
+    "",
+    `Please review the quotation and let us know if you have any questions or would like to discuss any changes.`,
+    "",
+    `Thank you for your business!`,
+    businessName || "Our Team",
+  ].join("\n");
+
+  const encodedMessage = encodeURIComponent(message);
+
+  const whatsappUrl =
+    whatsappPhone.length >= 10
       ? `https://wa.me/${whatsappPhone}?text=${encodedMessage}`
       : `https://wa.me/?text=${encodedMessage}`;
 
-    window.open(whatsappUrl, "_blank", "noopener,noreferrer");
-  };
-
+  alert(message);
+};
   const downloadPDF = () => {
     const doc = new jsPDF({ unit: "mm", format: "a4" });
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -1929,12 +1961,61 @@ function CustomerDirectory({
                 )}
               </div>
 
-              <button
-                onClick={() => onNewForCustomer(item.name, item.phone, item.location)}
-                className="mt-4 w-full rounded-xl bg-blue-600 py-3 font-semibold text-white hover:bg-blue-700"
-              >
-                + New quotation for customer
-              </button>
+             <div className="mt-4 grid gap-3 sm:grid-cols-2">
+  <button
+    onClick={() => onNewForCustomer(item.name, item.phone, item.location)}
+    className="w-full rounded-xl bg-blue-600 py-3 font-semibold text-white hover:bg-blue-700"
+  >
+    + New quotation
+  </button>
+
+  <button
+   onClick={() => {
+  const cleanPhone = item.phone.replace(/\D/g, "");
+
+  if (!cleanPhone) {
+    alert("This customer does not have a phone number.");
+    return;
+  }
+
+  let whatsappPhone = cleanPhone;
+
+  if (whatsappPhone.length === 10) {
+    whatsappPhone = `91${whatsappPhone}`;
+  }
+
+  const pendingAmount = Math.max(
+    Number(item.total || 0) - Number(item.paid || 0),
+    0
+  );
+
+  const message = [
+    `Hello ${item.name},`,
+    "",
+    `Thank you for choosing QuoteKaro.`,
+    "",
+    `📋 QUOTATION DETAILS`,
+    `📅 Date: ${item.lastDate || "-"}`,
+    "",
+    `💰 Total Amount: ₹${Number(item.total || 0).toLocaleString("en-IN")}`,
+    `💳 Amount Paid: ₹${Number(item.paid || 0).toLocaleString("en-IN")}`,
+    `⏳ Pending Amount: ₹${pendingAmount.toLocaleString("en-IN")}`,
+    "",
+    "Please review your quotation and let us know if you have any questions.",
+    "",
+    "Thank you for your business!",
+  ].join("\n");
+
+  window.open(
+    `https://wa.me/${whatsappPhone}?text=${encodeURIComponent(message)}`,
+    "_blank"
+  );
+}}
+    className="w-full rounded-xl bg-green-600 py-3 font-semibold text-white hover:bg-green-700"
+  >
+    💬 WhatsApp
+  </button>
+</div>
             </div>
           ))}
         </div>
